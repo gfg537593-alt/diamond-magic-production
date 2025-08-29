@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ur" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Diamond Magic — Login / Signup</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="rtl">
+  <main class="card">
+    <h1>💎 Diamond Magic</h1>
+    <p class="muted">براہِ کرم لاگ اِن یا سائن اپ کریں</p>
+
+    <section>
+      <h3>لاگ اِن</h3>
+      <input id="loginEmail" type="email" placeholder="ای میل" />
+      <input id="loginPassword" type="password" placeholder="پاس ورڈ" />
+      <div class="row">
+        <button id="loginBtn">لاگ اِن</button>
+        <button id="toSignup" class="ghost">سائن اپ پر جائیں</button>
+      </div>
+    </section>
+
+    <section style="margin-top:14px">
+      <h3>سائن اپ</h3>
+      <input id="signupEmail" type="email" placeholder="ای میل" />
+      <input id="signupPassword" type="password" placeholder="پاس ورڈ" />
+      <div class="row">
+        <button id="signupBtn">سائن اپ</button>
+      </div>
+    </section>
+
+    <p class="small muted">اس ایپ کو چلانے کے لیے آپ کو Firebase Console میں یہی project کنفیگر کرنا ہوگا۔</p>
+  </main>
+
+<script type="module">
+import './firebase.js';
+import { auth, db } from './firebase.js';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js";
+import { ref, set, get } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-database.js";
+
+// elements
+const loginEmail = document.getElementById('loginEmail');
+const loginPassword = document.getElementById('loginPassword');
+const loginBtn = document.getElementById('loginBtn');
+const toSignup = document.getElementById('toSignup');
+const signupEmail = document.getElementById('signupEmail');
+const signupPassword = document.getElementById('signupPassword');
+const signupBtn = document.getElementById('signupBtn');
+
+toSignup.onclick = ()=> window.scrollTo({ top: 400, behavior:'smooth' });
+
+signupBtn.onclick = async ()=>{
+  const email = signupEmail.value.trim(), pass = signupPassword.value.trim();
+  if(!email||!pass) return alert('ای میل اور پاس ورڈ درج کریں');
+  try{
+    const res = await createUserWithEmailAndPassword(auth, email, pass);
+    await set(ref(db, 'users/' + res.user.uid), { email: res.user.email, balance: 0, createdAt: Date.now() });
+    alert('سائن اپ کامیاب — براہ کرم لاگ اِن کریں'); window.location.href = 'index.html';
+  }catch(err){ alert(err.message); }
+};
+
+loginBtn.onclick = async ()=>{
+  const email = loginEmail.value.trim(), pass = loginPassword.value.trim();
+  if(!email||!pass) return alert('ای میل اور پاس ورڈ درج کریں');
+  try{
+    const res = await signInWithEmailAndPassword(auth, email, pass);
+    const uid = res.user.uid;
+    const ADMIN_UID = 'REPLACE_WITH_ADMIN_UID';
+    if(uid === ADMIN_UID) window.location.href = 'admin.html';
+    else window.location.href = 'user.html';
+  }catch(err){ alert(err.message); }
+};
+
+onAuthStateChanged(auth, user=>{ if(user){ const ADMIN_UID='REPLACE_WITH_ADMIN_UID'; if(user.uid===ADMIN_UID) window.location.href='admin.html'; else window.location.href='user.html'; } });
+</script>
+</body>
+</html>

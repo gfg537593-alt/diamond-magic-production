@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ur" dir="rtl">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Diamond Magic — Admin</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="rtl">
+  <header class="card">
+    <h2>🔐 Admin Panel</h2>
+    <div><button id="adminLogout" class="ghost">Logout</button></div>
+  </header>
+
+  <main class="card">
+    <section>
+      <h4>Users</h4>
+      <div id="usersTable"></div>
+    </section>
+
+    <section style="margin-top:12px">
+      <h4>Deposit Requests</h4>
+      <div id="depList"></div>
+    </section>
+
+    <section style="margin-top:12px">
+      <h4>Withdraw Requests</h4>
+      <div id="wdList"></div>
+    </section>
+  </main>
+
+<script type="module">
+import './firebase.js';
+import { auth, db } from './firebase.js';
+import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js";
+import { ref, get, onValue, update } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-database.js";
+
+const ADMIN_UID = "REPLACE_WITH_ADMIN_UID"; // set this to your admin uid
+const usersTable = document.getElementById('usersTable');
+const depList = document.getElementById('depList');
+const wdList = document.getElementById('wdList');
+const adminLogout = document.getElementById('adminLogout');
+
+onAuthStateChanged(auth, user=>{
+  if(!user) return window.location.href='index.html';
+  if(user.uid !== ADMIN_UID) { alert('آپ ایڈمن نہیں ہیں'); signOut(auth); window.location.href='index.html'; }
+  loadAdminData();
+});
+
+adminLogout.onclick = async ()=>{ await signOut(auth); window.location.href='index.html'; };
+
+function loadAdminData(){
+  const usersRef = ref(db, 'users');
+  onValue(usersRef, snap=>{
+    const data = snap.val() || {};
+    usersTable.innerHTML = '';
+    Object.keys(data).forEach(uid=>{
+      const u = data[uid];
+      const div = document.createElement('div');
+      div.className='card small';
+      div.innerHTML = `<div><b>${u.email || uid}</b><div class="muted small">${uid}</div></div><div>Balance: ₨ ${u.balance || 0}</div>
+        <div style="margin-top:6px"><button onclick="window.__dm_add('${uid}',100)">+100</button> <button onclick="window.__dm_add('${uid}',-100)">-100</button> <button onclick="window.__dm_reset('${uid}')">Reset</button></div>`;
+      usersTable.appendChild(div);
+    });
+  });
+
+  const depRef = ref(db, 'depositRequests');
+  onValue(depRef, snap=>{
+    const data = snap.val() || {}; depList.innerHTML='';
+    Object.keys(data).forEach(id=>{ const r=data[id]; const div=document.createElement('div'); div.className='card small'; div.innerHTML=`<div><b>${id}</b> — ₨ ${r.amount} — ${r.status || ''} <div class="muted small">${r.uid}</div></div><div style="margin-top:6px"><button onclick="window.__dm_approveDep('${id}')">Approve</button> <button onclick="window.__dm_rejectDep('${id}')">Reject</button></div>`; depList.appendChild(div); });
+  });
+
+  const wRef = ref(db, 'withdrawRequests');
+  onValue(wRef, snap=>{
+    const data = snap.val() || {}; wdList.innerHTML='';
+    Object.keys(data).forEach(id=>{ const r=data[id]; const div=document.createElement('div'); div.className='card small'; div.innerHTML=`<div><b>${id}</b> — ₨ ${r.amount} — ${r.status || ''} <div class="muted small">${r.uid}</div></div><div style="margin-top:6px"><button onclick="window.__dm_approveWd('${id}')">Approve</button> <button onclick="window.__dm_rejectWd('${id}')">Reject</button></div>`; wdList.appendChild(div); });
+  });
+}
+
+window.__dm_add = async (uid, delta)=>{ const uRef = ref(db, 'users/' + uid); const snap = await get(uRef); const cur = (snap.exists() and snap.val().balance) ? snap.val().balance : 0; await update(uRef, { balance: cur + delta }); alert('Updated'); };
+window.__dm_reset = async uid=>{ if(!confirm('Reset balance?')) return; await update(ref(db, 'users/' + uid), { balance: 0 }); alert('Reset'); };
+
+window.__dm_approveDep = async id=>{ const r = (await get(ref(db, 'depositRequests/' + id))).val(); if(!r) return alert('Not found'); const uRef = ref(db, 'users/' + r.uid); const usnap = await get(uRef); const cur = (usnap.exists() and usnap.val().balance) ? usnap.val().balance : 0; await update(uRef, { balance: cur + r.amount }); await update(ref(db, 'depositRequests/' + id), { status:'approved', processedAt: Date.now() }); alert('Approved'); };
+window.__dm_rejectDep = async id=>{ await update(ref(db, 'depositRequests/' + id), { status:'rejected', processedAt: Date.now() }); alert('Rejected'); };
+
+window.__dm_approveWd = async id=>{ const r = (await get(ref(db, 'withdrawRequests/' + id))).val(); if(!r) return alert('Not found'); const uRef = ref(db, 'users/' + r.uid); const usnap = await get(uRef); const cur = (usnap.exists() and usnap.val().balance) ? usnap.val().balance : 0; if(cur < r.amount) return alert('Insufficient'); await update(uRef, { balance: cur - r.amount }); await update(ref(db, 'withdrawRequests/' + id), { status:'approved', processedAt: Date.now() }); alert('Approved'); };
+window.__dm_rejectWd = async id=>{ await update(ref(db, 'withdrawRequests/' + id), { status:'rejected', processedAt: Date.now() }); alert('Rejected'); };
+</script>
+</body>
+</html>

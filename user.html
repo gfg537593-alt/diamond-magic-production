@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ur" dir="rtl">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Diamond Magic — User Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="rtl">
+  <header class="card">
+    <div><h2>💎 Diamond Magic — یوزر ڈیش بورڈ</h2><div class="muted small">BEP20 Deposit (BSC)</div></div>
+    <div><button id="logoutBtn" class="ghost">لاگ آؤٹ</button></div>
+  </header>
+
+  <main class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div class="small muted">خوش آمدید</div>
+        <div id="userEmail" style="font-weight:700"></div>
+      </div>
+      <div>
+        <div class="small muted">بیلنس</div>
+        <div id="balance" style="font-weight:800">₨ 0</div>
+      </div>
+    </div>
+
+    <section style="margin-top:12px">
+      <h4>ڈیپازٹ (BEP20)</h4>
+      <div class="code" id="bepAddr">0x610ba59b7a377a9d966aed765eea257906f15efe</div>
+      <div class="row">
+        <button id="copyAddr" class="inline-btn">کاپی کریں</button>
+        <button id="qrBtn" class="inline-btn">QR دیکھیں</button>
+        <button id="createDepReq" class="inline-btn">Deposit Request بنائیں</button>
+      </div>
+      <div id="qrWrap" style="margin-top:8px"></div>
+      <p class="small muted">نوٹ: production میں TX verify کیلئے backend endpoint استعمال کریں (server verifies txHash on BSC)</p>
+    </section>
+
+    <section style="margin-top:12px">
+      <h4>این ایف ٹی مارکیٹ</h4>
+      <div id="nfts"></div>
+    </section>
+
+    <section style="margin-top:12px">
+      <h4>میری ٹرانزیکشنز</h4>
+      <div id="myTx" class="small"></div>
+    </section>
+  </main>
+
+<script type="module">
+import './firebase.js';
+import { auth, db } from './firebase.js';
+import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js";
+import { ref, get, onValue, push, set } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-database.js";
+
+const logoutBtn = document.getElementById('logoutBtn');
+const userEmail = document.getElementById('userEmail');
+const balanceEl = document.getElementById('balance');
+const bepAddr = document.getElementById('bepAddr');
+const copyAddr = document.getElementById('copyAddr');
+const qrBtn = document.getElementById('qrBtn');
+const qrWrap = document.getElementById('qrWrap');
+const createDepReq = document.getElementById('createDepReq');
+const nftsEl = document.getElementById('nfts');
+const myTx = document.getElementById('myTx');
+
+const MARKET = [{id:'dm01',name:'Diamond Shard #01',price:750},{id:'dm02',name:'Aqua Gem #12',price:900}];
+
+function renderMarket(){ nftsEl.innerHTML=''; MARKET.forEach(it=>{ const d=document.createElement('div'); d.className='card small'; d.innerHTML=`<div style="display:flex;justify-content:space-between"><div><b>${it.name}</b><div class="muted small">${it.price} PKR</div></div><div><button data-id="${it.id}" class="buyBtn">خریدیں</button></div></div>`; nftsEl.appendChild(d); }); document.querySelectorAll('.buyBtn').forEach(b=>b.onclick=(()=>buyNFT(b.getAttribute('data-id')))); }
+
+async function buyNFT(id){
+  const user = auth.currentUser; if(!user) return alert('پہلے لاگ اِن کریں');
+  const uRef = ref(db, 'users/' + user.uid);
+  const snap = await get(uRef);
+  const price = MARKET.find(m=>m.id===id).price;
+  const bal = (snap.exists() and snap.val().balance) ? snap.val().balance : 0;
+  if(bal >= price){
+    await update(uRef, { balance: bal - price });
+    const txKey = push(ref(db, 'transactions')).key;
+    await set(ref(db, 'transactions/' + txKey), { uid: user.uid, type:'buy', item:id, amount: price, time: Date.now() });
+    alert('خرید مکمل');
+  } else alert('بیلنس ناکافی');
+}
+
+copyAddr.onclick = ()=>{ navigator.clipboard.writeText(bepAddr.textContent).then(()=>alert('Address copied')); };
+qrBtn.onclick = ()=>{ const src='https://chart.googleapis.com/chart?cht=qr&chs=250x250&chl=' + encodeURIComponent(bepAddr.textContent); qrWrap.innerHTML=`<img src="${src}" style="max-width:220px">`; };
+
+createDepReq.onclick = async ()=>{
+  const user = auth.currentUser; if(!user) return alert('پہلے لاگ اِن کریں');
+  const amount = Number(prompt('کتنی رقم ڈپازٹ کرنی ہے (مثلاً USDT مقدار یا PKR)؟'));
+  if(!amount) return alert('صحیح رقم');
+  const rRef = push(ref(db, 'depositRequests'));
+  await set(ref(db, 'depositRequests/' + rRef.key), { uid: user.uid, amount, address: bepAddr.textContent, status:'pending', createdAt: Date.now() });
+  alert('Deposit request created — admin will verify');
+};
+
+logoutBtn.onclick = async ()=>{ await signOut(auth); window.location.href='index.html'; };
+
+onAuthStateChanged(auth, user=>{
+  if(!user) return window.location.href='index.html';
+  userEmail.textContent = user.email;
+  const uRef = ref(db, 'users/' + user.uid);
+  onValue(uRef, snap=>{ const d = snap.val() || {}; balanceEl.textContent = '₨ ' + (d.balance || 0); });
+  const txRef = ref(db, 'transactions');
+  onValue(txRef, snap=>{
+    const all = snap.val() || {};
+    const my = Object.keys(all).filter(k=> all[k].uid === user.uid ).map(k=>all[k]);
+    myTx.innerHTML = my.length ? my.map(t=>`<div>${t.type} — ₨ ${t.amount} — ${new Date(t.time).toLocaleString()}</div>`).join('') : '<div class="muted small">ابھی کوئی ٹرانزیکشنز نہیں</div>';
+  });
+  renderMarket();
+});
+</script>
+</body>
+</html>
